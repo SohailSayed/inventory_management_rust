@@ -1,7 +1,17 @@
 FROM rust:latest
 
-COPY ./ ./
+RUN USER=root cargo new --bin inventory_management_rust
+WORKDIR /inventory_management_rust
+
+COPY ./Cargo.lock ./Cargo.lock
+COPY ./Cargo.toml ./Cargo.toml
 
 RUN cargo build --release
+RUN rm src/*.rs
 
-CMD ["./target/release/inventory_management_rust"]
+COPY ./src ./src
+
+RUN rm ./target/release/deps/inventory_management_rust*
+RUN cargo install --path .
+
+CMD ["inventory_management_rust"]
