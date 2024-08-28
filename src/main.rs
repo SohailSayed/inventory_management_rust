@@ -134,14 +134,6 @@ async fn delete_product(db: &DatabaseConnection, id: i32) -> Result<(), DbErr> {
     };
     deleted_product.delete(db).await?;
 
-   // let inventory_id = fetch_inventory_by_product_id(db, id).await?;
-
-   // let deleted_inventory = inventory::ActiveModel {
-   //     id: ActiveValue::Set(inventory_id),
-   //     ..Default::default()
-   // };
-   // deleted_inventory.delete(db).await?;
-    
     Ok(())
 }
 
