@@ -1,5 +1,10 @@
+mod migrator;
+
 use futures::executor::block_on;
 use sea_orm::{ConnectionTrait, Database, DbBackend, DbErr, Statement};
+use sea_orm_migration::prelude::*;
+
+use crate::migrator::Migrator;
 
 // hard-coding password for now, would not do this in production!
 const DATABASE_URL: &str = "postgres://postgres:password123@db:5432";
@@ -27,6 +32,12 @@ async fn run() -> Result<(), DbErr> {
         }
         DbBackend::Sqlite => db,
     };
+
+    let schema_manager = SchemaManager::new(db);
+
+    Migrator::refresh(db).await?;
+    assert!(schema_manager.has_table("product").await?);
+    assert!(schema_manager.has_table("inventory").await?);
 
     Ok(())
 }
