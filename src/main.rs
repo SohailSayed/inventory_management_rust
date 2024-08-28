@@ -1,8 +1,10 @@
 mod migrator;
+mod entities;
 
 use futures::executor::block_on;
-use sea_orm::{ConnectionTrait, Database, DbBackend, DbErr, Statement};
+use sea_orm::*;
 use sea_orm_migration::prelude::*;
+use entities::{prelude::*, *};
 
 use crate::migrator::Migrator;
 
@@ -39,6 +41,66 @@ async fn run() -> Result<(), DbErr> {
     assert!(schema_manager.has_table("product").await?);
     assert!(schema_manager.has_table("inventory").await?);
 
+    // create
+    create_product(db, "Sample Product 2", 20.0).await?;
+    // read
+    find_product_by_id(db, 1).await?;
+    find_product_by_name(db, "Sample Product 2").await?;
+    // update
+    update_product(db, 1, "Updated Product Name", 30.0).await?;
+    // delete
+    delete_product(db, 1).await?;
+
+    Ok(())
+}
+
+async fn create_product(db: &DatabaseConnection, name: &str, price: f64) -> Result<(), DbErr> {
+    let new_product = product::ActiveModel {
+        name: ActiveValue::Set(name.to_owned()),
+        price: ActiveValue::Set(price),
+        ..Default::default()
+    };
+    let res = Product::insert(new_product).exec(db).await?;
+    
+    Ok(())
+}
+
+async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<(), DbErr> {
+    let found_product: Option<product::Model> = Product::find_by_id(id).one(db).await?;
+    println!("{}", found_product.unwrap().name);
+
+    Ok(()) 
+}  
+
+async fn find_product_by_name(db: &DatabaseConnection, name: &str) -> Result<(), DbErr> {
+    // for testing - need to enforce unique names for each product somewhere
+    let found_product: Option<product::Model> = Product::find()
+    .filter(product::Column::Name.eq(name.to_owned()))
+    .one(db)
+    .await?;
+    println!("{}", found_product.unwrap().name);
+
+    Ok(()) 
+}
+
+async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64) -> Result<(), DbErr> {
+    let updated_product = product::ActiveModel {
+        id: ActiveValue::Set(id),
+        name: ActiveValue::Set(name.to_owned()),
+        price: ActiveValue::Set(price),
+    };
+    updated_product.update(db).await?;
+    
+    Ok(())
+}
+
+async fn delete_product(db: &DatabaseConnection, id: i32) -> Result<(), DbErr> {
+    let deleted_product = product::ActiveModel {
+        id: ActiveValue::Set(id),
+        ..Default::default()
+    };
+    deleted_product.delete(db).await?;
+    
     Ok(())
 }
 
