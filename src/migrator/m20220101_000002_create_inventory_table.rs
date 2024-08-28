@@ -26,12 +26,14 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(Inventory::Name).string().not_null())
                     .col(ColumnDef::new(Inventory::Quantity).integer().not_null())
+                    .col(ColumnDef::new(Inventory::Capacity).integer().not_null())
                     .col(ColumnDef::new(Inventory::ProductId).integer().not_null())
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk-inventory-product_id")
                             .from(Inventory::Table, Inventory::ProductId)
-                            .to(Product::Table, Product::Id),
+                            .to(Product::Table, Product::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
             )
@@ -51,5 +53,6 @@ pub enum Inventory{
     Id,
     Name,
     Quantity,
+    Capacity,
     ProductId,
 }

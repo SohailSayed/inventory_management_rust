@@ -9,6 +9,7 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub quantity: i32,
+    pub capacity: i32,
     pub product_id: i32,
 }
 
