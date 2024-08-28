@@ -1,11 +1,11 @@
 services:
   server:
-    build:
-      context: .
-      target: final
+    build: .
     ports:
       - 8080:8080
-
+    depends_on:
+      db:
+        condition: service_healthy
   db:
     image: postgres
     restart: always
@@ -20,7 +20,7 @@ services:
     expose:
       - 5432
     healthcheck:
-      test: ["CMD", "pg_isready"]
+      test: [ "CMD", "pg_isready" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,3 +29,4 @@ volumes:
 secrets:
   db-password:
     file: db/password.txt
+
