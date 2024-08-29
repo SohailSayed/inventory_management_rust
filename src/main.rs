@@ -212,13 +212,13 @@ async fn find_inventory_by_name(db: &DatabaseConnection, name: &str) -> Result<i
     }) 
 }
 
-async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64) -> Result<(), DbErr> {
+async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64) -> Result<(product::Model, inventory::Model), DbErr> {
     if price < 0.0 {
         return Err(DbErr::Custom("Price can't be negative.".to_owned()));
     }
     let find_product = find_product_by_id(db, id).await;
     if find_product.is_err() {
-        return Err(DbErr::Custom(format!("Cannot update non-existing product")));
+        return Err(DbErr::Custom("Cannot update non-existing product.".to_owned()));
     }
 
     let updated_product = product::ActiveModel {
@@ -237,7 +237,23 @@ async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64
         ..Default::default()
     };
     updated_inventory.update(db).await?;
-    Ok(())
+
+    let returned_inventory = find_inventory_by_name(db, name).await?;
+    Ok((
+        product::Model {
+            id: id,
+            name: name.to_owned(),
+            price: price,
+        },
+        inventory::Model {
+            id: inventory_id,
+            name: name.to_owned(),
+            quantity: returned_inventory.quantity,
+            capacity: returned_inventory.capacity,
+            stock: returned_inventory.stock,
+            product_id: id,
+        }
+    ))
 }
 
 async fn update_inventory_quantity(db: &DatabaseConnection, name: &str, quantity: i32) -> Result<(), DbErr> {
@@ -541,6 +557,72 @@ mod tests {
         let result = find_inventory_by_name(empty_db, "Invalid Product").await;
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Inventory with this name not found.".to_owned()));
+    }
+
+    // 6. Test update_product operation
+    async fn test_update_product() {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([
+                [product::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    price: 10.0,
+                }]
+            ])
+            .append_query_results([
+                [inventory::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }],
+            ])
+            .into_connection();
+        
+        let result = update_product(db, 1, "Updated Test Product", 20.0).await;
+        let (product_result, inventory_result) = result.unwrap();
+        assert_eq!(product_result, 
+                product::Model {
+                    id: 1,
+                    name: "Updated Test Product".to_owned(),
+                    price: 20.0,
+                }
+        );
+        assert_eq!(inventory_result, 
+                inventory::Model {
+                    id: 1,
+                    name: "Updated Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }
+        );
+    }
+    // update_product error handling tests
+    // Error: product not found
+    #[tokio::test]
+    async fn test_update_product_invalid(){
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results([Vec::<product::Model>::new()])
+        .into_connection();
+
+        let result = update_product(empty_db, 1, "Updated Test Product", 20.0).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Cannot update non-existing product.".to_owned()));
+    }
+    // Error: product not found
+    #[tokio::test]
+    async fn test_update_product_negative_price(){
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results([Vec::<product::Model>::new()])
+        .into_connection();
+
+        let result = update_product(empty_db, 1, "Updated Test Product", -20.0).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Price can't be negative.".to_owned()));
     }
 }
 
