@@ -104,7 +104,7 @@ async fn retrieve_low_stock(db: &DatabaseConnection, threshold: f64) -> Result<V
     Ok(low_stock_products)
 }
 
-async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacity: i32) -> Result<(), DbErr> {
+async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacity: i32) -> Result<(product::Model, inventory::Model), DbErr> {
     if capacity == 0 {
         return Err(DbErr::Custom("Capacity can't be zero.".to_owned()));
     }
@@ -119,7 +119,7 @@ async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacit
         price: ActiveValue::Set(price),
         ..Default::default()
     };
-    let res = Product::insert(new_product).exec(db).await?;
+    let product_result = Product::insert(new_product).exec(db).await?;
 
     // reflect change in inventory
     let new_inventory = inventory::ActiveModel {
@@ -127,11 +127,25 @@ async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacit
         quantity: ActiveValue::Set(capacity),
         capacity: ActiveValue::Set(capacity),
         stock: ActiveValue::Set(1.0),
-        product_id: ActiveValue::Set(res.last_insert_id),
+        product_id: ActiveValue::Set(product_result.last_insert_id),
         ..Default::default()
     };
-    Inventory::insert(new_inventory).exec(db).await?;
-    Ok(())
+    let inventory_result = Inventory::insert(new_inventory).exec(db).await?;
+    Ok((
+        product::Model {
+            id: product_result.last_insert_id,
+            name: name.to_owned(),
+            price: price,
+        },
+        inventory::Model {
+            id: inventory_result.last_insert_id,
+            name: name.to_owned(),
+            quantity: capacity,
+            capacity: capacity,
+            stock: 1.0,
+            product_id: product_result.last_insert_id,
+        }
+    ))
 }
 
 async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<Option<product::Model>, DbErr> {
@@ -246,6 +260,96 @@ async fn delete_product(db: &DatabaseConnection, id: i32) -> Result<(), DbErr> {
     };
     deleted_product.delete(db).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{
+        DatabaseBackend, MockDatabase,
+    };
+
+    // Test create product operation
+    #[tokio::test]
+    async fn test_create_product() -> Result<(), DbErr> {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([
+                [product::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    price: 10.0,
+                }]
+            ])
+            .append_query_results([
+                [inventory::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }],
+            ])
+            .append_exec_results([
+                MockExecResult {
+                    last_insert_id: 1,
+                    rows_affected: 1,
+                },
+            ])
+            .append_exec_results([
+                MockExecResult {
+                    last_insert_id: 1,
+                    rows_affected: 1,
+                },
+            ])
+            .into_connection();
+
+        let result = create_product(db, "Test Product", 10.0, 100).await?;
+        let (product_result, inventory_result) = result;
+        assert_eq!(product_result, 
+                product::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    price: 10.0,
+                }
+        );
+        assert_eq!(inventory_result, 
+                inventory::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }
+        );
+        Ok(())
+    }
+    // Test error handling
+    #[tokio::test]
+    // Error: Capacity is zero
+    async fn test_create_product_zero_capacity() {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let result = create_product(db, "Test Product", 10.0, 0).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Capacity can't be zero.".to_owned()));
+    }
+    #[tokio::test]
+    // Error: Capacity is negative
+    async fn test_create_product_negative_capacity() {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let result = create_product(db, "Test Product", 10.0, -220).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Capacity can't be negative.".to_owned()));
+    }
+    // Error: Price is negative
+    async fn test_create_product_negative_price() {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let result = create_product(db, "Test Product", -10.0, 100).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Price can't be negative.".to_owned()));
+    }
+        
 }
 
 fn main() {
