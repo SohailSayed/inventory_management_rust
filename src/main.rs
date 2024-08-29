@@ -51,7 +51,10 @@ async fn run() -> Result<(), DbErr> {
     // delete
     delete_product(db, 1).await?;
 
+    // find inventory by name
     // update quantity
+    create_product(db, "Sample Product 3", 55.0, 300).await?;
+    update_inventory_quantity(db, "Sample Product 3", 150).await?; 
     // retrieve low stock
     // calculate total inventory value
 
@@ -79,11 +82,11 @@ async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacit
     Ok(())
 }
 
-async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<(), DbErr> {
+async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<Option<product::Model>, DbErr> {
     let found_product: Option<product::Model> = Product::find_by_id(id).one(db).await?;
-    println!("{}", found_product.unwrap().name);
+    println!("{}", found_product.as_ref().unwrap().name);
 
-    Ok(()) 
+    Ok(found_product) 
 }  
 
 async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32) -> Result<i32, DbErr> {
@@ -95,15 +98,25 @@ async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32)
     Ok(fetched_inventory.unwrap().id)
 }
 
-async fn find_product_by_name(db: &DatabaseConnection, name: &str) -> Result<(), DbErr> {
+async fn find_product_by_name(db: &DatabaseConnection, name: &str) -> Result<Option<product::Model>, DbErr> {
     // for testing - need to enforce unique names for each product somewhere
     let found_product: Option<product::Model> = Product::find()
     .filter(product::Column::Name.eq(name.to_owned()))
     .one(db)
     .await?;
-    println!("{}", found_product.unwrap().name);
+    println!("{}", found_product.as_ref().unwrap().name);
 
-    Ok(()) 
+    Ok(found_product) 
+}
+
+async fn find_inventory_by_name(db: &DatabaseConnection, name: &str) -> Result<Option<inventory::Model>, DbErr> {
+    let found_inventory: Option<inventory::Model> = Inventory::find()
+    .filter(inventory::Column::Name.eq(name.to_owned()))
+    .one(db)
+    .await?;
+    println!("{}", found_inventory.as_ref().unwrap().name);
+
+    Ok(found_inventory) 
 }
 
 async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64) -> Result<(), DbErr> {
@@ -120,6 +133,20 @@ async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64
         id: ActiveValue::Set(inventory_id),
         name: ActiveValue::set(name.to_owned()),
         product_id: ActiveValue::set(id),
+        ..Default::default()
+    };
+    updated_inventory.update(db).await?;
+    
+    Ok(())
+}
+
+async fn update_inventory_quantity(db: &DatabaseConnection, name: &str, quantity: i32) -> Result<(), DbErr> {
+    // edge case to do - make sure quantity not greater than capacity, and more
+
+    let inventory_id = find_inventory_by_name(db, name).await?.unwrap().id;
+    let updated_inventory = inventory::ActiveModel {
+        id: ActiveValue::Set(inventory_id),
+        quantity: ActiveValue::set(quantity),
         ..Default::default()
     };
     updated_inventory.update(db).await?;
