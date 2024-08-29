@@ -27,6 +27,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Inventory::Name).string().not_null())
                     .col(ColumnDef::new(Inventory::Quantity).integer().not_null())
                     .col(ColumnDef::new(Inventory::Capacity).integer().not_null())
+                    .col(ColumnDef::new(Inventory::Stock).double().not_null())
                     .col(ColumnDef::new(Inventory::ProductId).integer().not_null())
                     .foreign_key(
                         ForeignKey::create()
@@ -54,5 +55,6 @@ pub enum Inventory{
     Name,
     Quantity,
     Capacity,
+    Stock,
     ProductId,
 }

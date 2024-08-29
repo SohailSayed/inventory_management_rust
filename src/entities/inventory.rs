@@ -2,7 +2,7 @@
 
 use sea_orm::entity::prelude::*;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "inventory")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -10,6 +10,8 @@ pub struct Model {
     pub name: String,
     pub quantity: i32,
     pub capacity: i32,
+    #[sea_orm(column_type = "Double")]
+    pub stock: f64,
     pub product_id: i32,
 }
 
@@ -20,7 +22,7 @@ pub enum Relation {
         from = "Column::ProductId",
         to = "super::product::Column::Id",
         on_update = "NoAction",
-        on_delete = "NoAction"
+        on_delete = "Cascade"
     )]
     Product,
 }

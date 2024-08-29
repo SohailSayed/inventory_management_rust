@@ -11,6 +11,8 @@ use crate::migrator::Migrator;
 // hard-coding password for now, would not do this in production!
 const DATABASE_URL: &str = "postgres://postgres:password123@db:5432";
 const DB_NAME: &str = "warehouse_db";
+// arbritary threshold of 30% picked to flag low stock products
+const LOW_THRESHOLD: f64 = 0.3;
 
 async fn run() -> Result<(), DbErr> {
     let db = Database::connect(DATABASE_URL).await?;
@@ -54,11 +56,35 @@ async fn run() -> Result<(), DbErr> {
     // find inventory by name
     // update quantity
     create_product(db, "Sample Product 3", 55.0, 300).await?;
-    update_inventory_quantity(db, "Sample Product 3", 150).await?; 
+    update_inventory_quantity(db, "Sample Product 3", 151).await?; 
+
+    create_product(db, "Sample Product 4", 55.0, 20).await?;
+    update_inventory_quantity(db, "Sample Product 4", 1).await?; 
+
+    create_product(db, "Sample Product 5", 55.0, 200).await?;
+    update_inventory_quantity(db, "Sample Product 5", 3).await?; 
+
     // retrieve low stock
+    retrieve_low_stock(db, LOW_THRESHOLD).await?;
     // calculate total inventory value
 
     Ok(())
+}
+
+async fn retrieve_low_stock(db: &DatabaseConnection, threshold: f64) -> Result<Vec<inventory::Model>, DbErr> {
+    let low_stock_products: Vec<inventory::Model> = Inventory::find()
+        .filter(
+            Condition::all()
+                .add(inventory::Column::Stock.lte(threshold))
+        )
+        .all(db)
+        .await?;
+
+    for product in &low_stock_products {
+        println!("Low Stock Products: {}", product.name);
+    }
+
+    Ok(low_stock_products)
 }
 
 async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacity: i32) -> Result<(), DbErr> {
@@ -74,6 +100,7 @@ async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacit
         name: ActiveValue::Set(name.to_owned()),
         quantity: ActiveValue::Set(capacity),
         capacity: ActiveValue::Set(capacity),
+        stock: ActiveValue::Set(1.0),
         product_id: ActiveValue::Set(res.last_insert_id),
         ..Default::default()
     };
@@ -143,10 +170,15 @@ async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64
 async fn update_inventory_quantity(db: &DatabaseConnection, name: &str, quantity: i32) -> Result<(), DbErr> {
     // edge case to do - make sure quantity not greater than capacity, and more
 
-    let inventory_id = find_inventory_by_name(db, name).await?.unwrap().id;
+    let inventory = find_inventory_by_name(db, name).await?.unwrap();
+    let inventory_id = inventory.id;
+    let capacity = inventory.capacity;
+    let stock = f64::from(quantity) / f64::from(capacity);
+
     let updated_inventory = inventory::ActiveModel {
         id: ActiveValue::Set(inventory_id),
-        quantity: ActiveValue::set(quantity),
+        quantity: ActiveValue::Set(quantity),
+        stock: ActiveValue::Set(stock), 
         ..Default::default()
     };
     updated_inventory.update(db).await?;
