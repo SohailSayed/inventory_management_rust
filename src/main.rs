@@ -187,22 +187,29 @@ async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32)
     .one(db)
     .await?;
     if let None = fetched_inventory {
-        return Err(DbErr::Custom("Inventory with Product ID not found".to_owned()));
+        return Err(DbErr::Custom("Inventory with this Product ID not found".to_owned()));
     }
     println!("{}", fetched_inventory.as_ref().unwrap().id);
-    Ok(fetched_inventory.unwrap().id)
+    Ok(fetched_inventory.as_ref().unwrap().id)
 }
 
-async fn find_inventory_by_name(db: &DatabaseConnection, name: &str) -> Result<Option<inventory::Model>, DbErr> {
+async fn find_inventory_by_name(db: &DatabaseConnection, name: &str) -> Result<inventory::Model, DbErr> {
     let found_inventory: Option<inventory::Model> = Inventory::find()
     .filter(inventory::Column::Name.eq(name.to_owned()))
     .one(db)
     .await?;
     if let None = found_inventory {
-        return Err(DbErr::Custom(format!("Inventory with name {} not found", name)));
+        return Err(DbErr::Custom("Inventory with this name not found.".to_owned()));
     }
     println!("{}", found_inventory.as_ref().unwrap().name);
-    Ok(found_inventory) 
+    Ok(inventory::Model {
+        id: found_inventory.as_ref().unwrap().id,
+        name: name.to_owned(),
+        quantity: found_inventory.as_ref().unwrap().quantity,
+        capacity: found_inventory.as_ref().unwrap().capacity,
+        stock: found_inventory.as_ref().unwrap().stock,
+        product_id: found_inventory.as_ref().unwrap().product_id,
+    }) 
 }
 
 async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64) -> Result<(), DbErr> {
@@ -238,7 +245,7 @@ async fn update_inventory_quantity(db: &DatabaseConnection, name: &str, quantity
     if find_inventory.is_err() {
         return Err(DbErr::Custom(format!("Cannot delete non-existing product in inventory")));
     }
-    let inventory = find_inventory_by_name(db, name).await?.unwrap();
+    let inventory = find_inventory_by_name(db, name).await?;
     let inventory_id = inventory.id;
     let capacity = inventory.capacity;
 
@@ -492,7 +499,48 @@ mod tests {
 
         let result = fetch_inventory_by_product_id(empty_db, 1).await;
         let e = result.unwrap_err();
-        assert_eq!(e, DbErr::Custom("Inventory with Product ID not found".to_owned()));
+        assert_eq!(e, DbErr::Custom("Inventory with this Product ID not found".to_owned()));
+    }
+
+    // 5. Test find_inventory_by_name operation
+    #[tokio::test]
+    async fn test_find_inventory_by_name(){
+        let db = &MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([
+                [inventory::Model {
+                    id: 2,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }]
+            ])
+            .into_connection();
+
+        let result = find_inventory_by_name(db, "Test Product").await;
+        assert_eq!(result,
+            Ok(inventory::Model {
+                id: 2,
+                name: "Test Product".to_owned(),
+                quantity: 100,
+                capacity: 100,
+                stock: 1.0,
+                product_id: 1,
+            })
+        );
+    }
+    // find_inventory_by_name error handling tests
+    // Error: inventory not found
+    #[tokio::test]
+    async fn test_find_inventory_by_name_invalid(){
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results([Vec::<product::Model>::new()])
+        .into_connection();
+
+        let result = find_inventory_by_name(empty_db, "Invalid Product").await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Inventory with this name not found.".to_owned()));
     }
 }
 
