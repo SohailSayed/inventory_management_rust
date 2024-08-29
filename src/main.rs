@@ -164,6 +164,23 @@ async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<product:
     }) 
 }  
 
+async fn find_product_by_name(db: &DatabaseConnection, name: &str) -> Result<product::Model, DbErr> {
+    // for testing - need to enforce unique names for each product somewhere
+    let found_product: Option<product::Model> = Product::find()
+    .filter(product::Column::Name.eq(name.to_owned()))
+    .one(db)
+    .await?;
+    if let None = found_product {
+        return Err(DbErr::Custom("Product with this name not found.".to_owned()));
+    }
+    println!("{}", found_product.as_ref().unwrap().name);
+    Ok(product::Model {
+        id: found_product.as_ref().unwrap().id,
+        name: name.to_owned(),
+        price: found_product.as_ref().unwrap().price,
+    }) 
+}
+
 async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32) -> Result<i32, DbErr> {
     let fetched_inventory: Option<inventory::Model> = Inventory::find()
     .filter(inventory::Column::ProductId.eq(product_id))
@@ -174,19 +191,6 @@ async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32)
     }
     println!("{}", fetched_inventory.as_ref().unwrap().id);
     Ok(fetched_inventory.unwrap().id)
-}
-
-async fn find_product_by_name(db: &DatabaseConnection, name: &str) -> Result<Option<product::Model>, DbErr> {
-    // for testing - need to enforce unique names for each product somewhere
-    let found_product: Option<product::Model> = Product::find()
-    .filter(product::Column::Name.eq(name.to_owned()))
-    .one(db)
-    .await?;
-    if let None = found_product {
-        return Err(DbErr::Custom(format!("Product with name {} not found", name)));
-    }
-    println!("{}", found_product.as_ref().unwrap().name);
-    Ok(found_product) 
 }
 
 async fn find_inventory_by_name(db: &DatabaseConnection, name: &str) -> Result<Option<inventory::Model>, DbErr> {
@@ -414,6 +418,64 @@ mod tests {
         let result = find_product_by_id(empty_db, 30).await;
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Product with this ID not found.".to_owned()));
+    }
+
+    // 3. Test find_product_by_name operation
+    #[tokio::test]
+    async fn test_find_product_by_name() {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([
+                [product::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    price: 10.0,
+                }]
+            ])
+            .append_query_results([
+                [inventory::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }],
+            ])
+            .append_exec_results([
+                MockExecResult {
+                    last_insert_id: 1,
+                    rows_affected: 1,
+                },
+            ])
+            .append_exec_results([
+                MockExecResult {
+                    last_insert_id: 1,
+                    rows_affected: 1,
+                },
+            ])
+            .into_connection();
+
+        let result = find_product_by_name(db, "Test Product").await;
+
+        assert_eq!(result, 
+            Ok(product::Model {
+                id: 1,
+                name: "Test Product".to_owned(),
+                price: 10.0,
+            })
+        );
+    }
+    // find_product_by_name error handling tests
+    // Error: product not found
+    #[tokio::test]
+    async fn test_find_product_by_name_invalid() {
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results([Vec::<product::Model>::new()])
+        .into_connection();
+
+        let result = find_product_by_name(empty_db, "Invalid Name").await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Product with this name not found.".to_owned()));
     }
 }
 
