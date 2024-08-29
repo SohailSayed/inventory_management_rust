@@ -613,7 +613,7 @@ mod tests {
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Cannot update non-existing product.".to_owned()));
     }
-    // Error: product not found
+    // Error: negative price
     #[tokio::test]
     async fn test_update_product_negative_price(){
         let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
