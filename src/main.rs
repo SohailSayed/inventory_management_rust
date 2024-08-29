@@ -187,7 +187,7 @@ async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32)
     .one(db)
     .await?;
     if let None = fetched_inventory {
-        return Err(DbErr::Custom(format!("Inventory with Product ID {} not found", product_id)));
+        return Err(DbErr::Custom("Inventory with Product ID not found".to_owned()));
     }
     println!("{}", fetched_inventory.as_ref().unwrap().id);
     Ok(fetched_inventory.unwrap().id)
@@ -431,28 +431,6 @@ mod tests {
                     price: 10.0,
                 }]
             ])
-            .append_query_results([
-                [inventory::Model {
-                    id: 1,
-                    name: "Test Product".to_owned(),
-                    quantity: 100,
-                    capacity: 100,
-                    stock: 1.0,
-                    product_id: 1,
-                }],
-            ])
-            .append_exec_results([
-                MockExecResult {
-                    last_insert_id: 1,
-                    rows_affected: 1,
-                },
-            ])
-            .append_exec_results([
-                MockExecResult {
-                    last_insert_id: 1,
-                    rows_affected: 1,
-                },
-            ])
             .into_connection();
 
         let result = find_product_by_name(db, "Test Product").await;
@@ -476,6 +454,45 @@ mod tests {
         let result = find_product_by_name(empty_db, "Invalid Name").await;
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Product with this name not found.".to_owned()));
+    }
+
+    // 4. Test fetch_inventory_by_product_id operation
+    #[tokio::test]
+    async fn test_fetch_inventory_by_product_id(){
+        let db = &MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([
+                [inventory::Model {
+                    id: 2,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }]
+            ])
+            .append_query_results([
+                [product::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    price: 10.0,
+                }]
+            ])
+            .into_connection();
+
+        let result = fetch_inventory_by_product_id(db, 1).await;
+        assert_eq!(result, Ok(2));
+    }
+    // fetch_inventory_by_product_id error handling tests
+    // Error: inventory not found
+    #[tokio::test]
+    async fn test_fetch_inventory_by_product_id_invalid(){
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results([Vec::<product::Model>::new()])
+        .into_connection();
+
+        let result = fetch_inventory_by_product_id(empty_db, 1).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Inventory with Product ID not found".to_owned()));
     }
 }
 
