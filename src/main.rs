@@ -82,12 +82,14 @@ async fn calculate_total_inventory_value(db: &DatabaseConnection) -> Result<f64,
         let product_value = f64::from(quantity) * price;
         total_value += product_value;
     }
-
     println!("Total inventory value: ${}", total_value);
     Ok(total_value)
 }
 
 async fn retrieve_low_stock(db: &DatabaseConnection, threshold: f64) -> Result<Vec<inventory::Model>, DbErr> {
+    if threshold > 1.00 {
+        return Err(DbErr::Custom("Threshold can't exceed 1.00 (100%)".to_owned()));
+    }
     let low_stock_products: Vec<inventory::Model> = Inventory::find()
         .filter(
             Condition::all()
@@ -99,11 +101,19 @@ async fn retrieve_low_stock(db: &DatabaseConnection, threshold: f64) -> Result<V
     for product in &low_stock_products {
         println!("Low Stock Products: {}", product.name);
     }
-
     Ok(low_stock_products)
 }
 
 async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacity: i32) -> Result<(), DbErr> {
+    if capacity == 0 {
+        return Err(DbErr::Custom("Capacity can't be zero.".to_owned()));
+    }
+    if capacity < 0 {
+        return Err(DbErr::Custom("Capacity can't be negative.".to_owned()));
+    }
+    if price < 0.0 {
+        return Err(DbErr::Custom("Price can't be negative.".to_owned()));
+    }
     let new_product = product::ActiveModel {
         name: ActiveValue::Set(name.to_owned()),
         price: ActiveValue::Set(price),
@@ -121,14 +131,15 @@ async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacit
         ..Default::default()
     };
     Inventory::insert(new_inventory).exec(db).await?;
-    
     Ok(())
 }
 
 async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<Option<product::Model>, DbErr> {
     let found_product: Option<product::Model> = Product::find_by_id(id).one(db).await?;
+    if let None = found_product {
+        return Err(DbErr::Custom(format!("Product with ID {} not found", id)));
+    }
     println!("{}", found_product.as_ref().unwrap().name);
-
     Ok(found_product) 
 }  
 
@@ -137,6 +148,9 @@ async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32)
     .filter(inventory::Column::ProductId.eq(product_id))
     .one(db)
     .await?;
+    if let None = fetched_inventory {
+        return Err(DbErr::Custom(format!("Inventory with Product ID {} not found", product_id)));
+    }
     println!("{}", fetched_inventory.as_ref().unwrap().id);
     Ok(fetched_inventory.unwrap().id)
 }
@@ -147,8 +161,10 @@ async fn find_product_by_name(db: &DatabaseConnection, name: &str) -> Result<Opt
     .filter(product::Column::Name.eq(name.to_owned()))
     .one(db)
     .await?;
+    if let None = found_product {
+        return Err(DbErr::Custom(format!("Product with name {} not found", name)));
+    }
     println!("{}", found_product.as_ref().unwrap().name);
-
     Ok(found_product) 
 }
 
@@ -157,12 +173,22 @@ async fn find_inventory_by_name(db: &DatabaseConnection, name: &str) -> Result<O
     .filter(inventory::Column::Name.eq(name.to_owned()))
     .one(db)
     .await?;
+    if let None = found_inventory {
+        return Err(DbErr::Custom(format!("Inventory with name {} not found", name)));
+    }
     println!("{}", found_inventory.as_ref().unwrap().name);
-
     Ok(found_inventory) 
 }
 
 async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64) -> Result<(), DbErr> {
+    if price < 0.0 {
+        return Err(DbErr::Custom("Price can't be negative.".to_owned()));
+    }
+    let find_product = find_product_by_id(db, id).await;
+    if find_product.is_err() {
+        return Err(DbErr::Custom(format!("Cannot update non-existing product")));
+    }
+
     let updated_product = product::ActiveModel {
         id: ActiveValue::Set(id),
         name: ActiveValue::Set(name.to_owned()),
@@ -179,18 +205,26 @@ async fn update_product(db: &DatabaseConnection, id: i32, name: &str, price: f64
         ..Default::default()
     };
     updated_inventory.update(db).await?;
-    
     Ok(())
 }
 
 async fn update_inventory_quantity(db: &DatabaseConnection, name: &str, quantity: i32) -> Result<(), DbErr> {
-    // edge case to do - make sure quantity not greater than capacity, and more
-
+    let find_inventory = find_inventory_by_name(db, name).await;
+    if find_inventory.is_err() {
+        return Err(DbErr::Custom(format!("Cannot delete non-existing product in inventory")));
+    }
     let inventory = find_inventory_by_name(db, name).await?.unwrap();
     let inventory_id = inventory.id;
     let capacity = inventory.capacity;
-    let stock = f64::from(quantity) / f64::from(capacity);
 
+    if quantity < 0 {
+        return Err(DbErr::Custom("Quantity can't be negative.".to_owned()));
+    }
+    if quantity > capacity {
+        return Err(DbErr::Custom("Quantity can't exceed capacity.".to_owned()));
+    }
+
+    let stock = f64::from(quantity) / f64::from(capacity);
     let updated_inventory = inventory::ActiveModel {
         id: ActiveValue::Set(inventory_id),
         quantity: ActiveValue::Set(quantity),
@@ -198,17 +232,19 @@ async fn update_inventory_quantity(db: &DatabaseConnection, name: &str, quantity
         ..Default::default()
     };
     updated_inventory.update(db).await?;
-    
     Ok(())
 }
 
 async fn delete_product(db: &DatabaseConnection, id: i32) -> Result<(), DbErr> {
+    let find_product = find_product_by_id(db, id).await;
+    if find_product.is_err() {
+        return Err(DbErr::Custom(format!("Cannot delete non-existing product")));
+    }
     let deleted_product = product::ActiveModel {
         id: ActiveValue::Set(id),
         ..Default::default()
     };
     deleted_product.delete(db).await?;
-
     Ok(())
 }
 
