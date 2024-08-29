@@ -39,4 +39,8 @@ The core functionality of this application lies in `src/main.rs`
 - Clean database for persistence - data is wiped every run, preventing persistance, however this allows consistent runs during testing and development;
 - Duplication between functions - there's some duplication between functions, however readibility and practical use are prioritized over performance here;
   
+## Use of AI tools
+AI tools have been used extensively for learning and debugging during development, but sparingly to write actual code;
+
+
 
