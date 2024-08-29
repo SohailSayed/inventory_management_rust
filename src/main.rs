@@ -67,8 +67,24 @@ async fn run() -> Result<(), DbErr> {
     // retrieve low stock
     retrieve_low_stock(db, LOW_THRESHOLD).await?;
     // calculate total inventory value
+    calculate_total_inventory_value(db).await?;
 
     Ok(())
+}
+
+async fn calculate_total_inventory_value(db: &DatabaseConnection) -> Result<f64, DbErr> {
+    let inventory: Vec<inventory::Model> = Inventory::find().all(db).await?;
+    let mut total_value: f64 = 0.0;
+    for product in &inventory {
+        let product_id = product.product_id;
+        let quantity = product.quantity;
+        let price = find_product_by_id(db, product_id).await?.unwrap().price;
+        let product_value = f64::from(quantity) * price;
+        total_value += product_value;
+    }
+
+    println!("Total inventory value: ${}", total_value);
+    Ok(total_value)
 }
 
 async fn retrieve_low_stock(db: &DatabaseConnection, threshold: f64) -> Result<Vec<inventory::Model>, DbErr> {
