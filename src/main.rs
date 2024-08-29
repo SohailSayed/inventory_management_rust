@@ -78,7 +78,7 @@ async fn calculate_total_inventory_value(db: &DatabaseConnection) -> Result<f64,
     for product in &inventory {
         let product_id = product.product_id;
         let quantity = product.quantity;
-        let price = find_product_by_id(db, product_id).await?.unwrap().price;
+        let price = find_product_by_id(db, product_id).await?.price;
         let product_value = f64::from(quantity) * price;
         total_value += product_value;
     }
@@ -148,13 +148,20 @@ async fn create_product(db: &DatabaseConnection, name: &str, price: f64, capacit
     ))
 }
 
-async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<Option<product::Model>, DbErr> {
+async fn find_product_by_id(db: &DatabaseConnection, id: i32) -> Result<product::Model, DbErr> {
+    println!("{}", id);
     let found_product: Option<product::Model> = Product::find_by_id(id).one(db).await?;
     if let None = found_product {
-        return Err(DbErr::Custom(format!("Product with ID {} not found", id)));
+        println!("None found");
+        return Err(DbErr::Custom("Product with this ID not found.".to_owned()));
     }
-    println!("{}", found_product.as_ref().unwrap().name);
-    Ok(found_product) 
+    
+    println!("{}", found_product.as_ref().unwrap().name.to_owned());
+    Ok(product::Model {
+        id: id,
+        name: found_product.as_ref().unwrap().name.to_owned(),
+        price: found_product.as_ref().unwrap().price,
+    }) 
 }  
 
 async fn fetch_inventory_by_product_id(db: &DatabaseConnection, product_id: i32) -> Result<i32, DbErr> {
@@ -269,7 +276,7 @@ mod tests {
         DatabaseBackend, MockDatabase,
     };
 
-    // Test create product operation
+    // 1. Test create_product operation
     #[tokio::test]
     async fn test_create_product() -> Result<(), DbErr> {
         let db = &MockDatabase::new(DatabaseBackend::Postgres)
@@ -325,31 +332,89 @@ mod tests {
         );
         Ok(())
     }
-    // Test error handling
+    // create_product error handling tests
     #[tokio::test]
     // Error: Capacity is zero
     async fn test_create_product_zero_capacity() {
-        let db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
-        let result = create_product(db, "Test Product", 10.0, 0).await;
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let result = create_product(empty_db, "Test Product", 10.0, 0).await;
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Capacity can't be zero.".to_owned()));
     }
     #[tokio::test]
     // Error: Capacity is negative
     async fn test_create_product_negative_capacity() {
-        let db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
-        let result = create_product(db, "Test Product", 10.0, -220).await;
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let result = create_product(empty_db, "Test Product", 10.0, -220).await;
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Capacity can't be negative.".to_owned()));
     }
+    #[tokio::test]
     // Error: Price is negative
     async fn test_create_product_negative_price() {
-        let db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
-        let result = create_product(db, "Test Product", -10.0, 100).await;
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let result = create_product(empty_db, "Test Product", -10.0, 100).await;
         let e = result.unwrap_err();
         assert_eq!(e, DbErr::Custom("Price can't be negative.".to_owned()));
     }
-        
+
+    // 2. Test find_product_by_id operation
+    #[tokio::test]
+    async fn test_find_product_by_id() {
+        let db = &MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([
+                [product::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    price: 10.0,
+                }]
+            ])
+            .append_query_results([
+                [inventory::Model {
+                    id: 1,
+                    name: "Test Product".to_owned(),
+                    quantity: 100,
+                    capacity: 100,
+                    stock: 1.0,
+                    product_id: 1,
+                }],
+            ])
+            .append_exec_results([
+                MockExecResult {
+                    last_insert_id: 1,
+                    rows_affected: 1,
+                },
+            ])
+            .append_exec_results([
+                MockExecResult {
+                    last_insert_id: 1,
+                    rows_affected: 1,
+                },
+            ])
+            .into_connection();
+
+        let result = find_product_by_id(db, 1).await;
+
+        assert_eq!(result, 
+            Ok(product::Model {
+                id: 1,
+                name: "Test Product".to_owned(),
+                price: 10.0,
+            })
+        );
+    }
+    // find_product_by_id error handling tests
+    // Error: product not found
+    #[tokio::test]
+    async fn test_find_product_by_id_invalid() {
+        let empty_db = &MockDatabase::new(DatabaseBackend::Postgres)
+        .append_query_results([Vec::<product::Model>::new()])
+        .into_connection();
+
+        let result = find_product_by_id(empty_db, 30).await;
+        let e = result.unwrap_err();
+        assert_eq!(e, DbErr::Custom("Product with this ID not found.".to_owned()));
+    }
 }
 
 fn main() {
